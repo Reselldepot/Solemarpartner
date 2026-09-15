@@ -171,15 +171,71 @@ Dabei bleibt der Status weiterhin standardmäßig `pending`
 Einwilligung, nur weil es jetzt in einem Befehl läuft.
 
 **"Nur neue Leads" bei wiederholten Läufen:** `mailchimp_import.py`
-merkt sich jede erfolgreich übertragene E-Mail in
-`data/mailchimp_imported_log.csv` und überspringt sie bei künftigen
-Läufen automatisch. Wenn du die Pipeline also z. B. wöchentlich laufen
-lässt (z. B. per Windows-Aufgabenplanung mit `python scraper/run_pipeline.py --push-mailchimp --live`
-als geplante Aufgabe), werden nur Betriebe, die seit dem letzten Lauf
-neu in den Daten aufgetaucht sind, überhaupt an Mailchimp geschickt -
-bereits bearbeitete Kontakte bekommen keine zweite Double-Opt-in-Mail.
-Sag Bescheid, falls das als feste geplante Aufgabe eingerichtet werden
-soll, das ist in wenigen Minuten erledigt.
+fragt vor jedem Import direkt bei Mailchimp nach, ob die E-Mail dort
+schon existiert, und überspringt sie in dem Fall. Wenn du die Pipeline
+also regelmäßig laufen lässt, werden nur Betriebe, die noch nicht in
+der Audience sind, überhaupt neu angelegt - bereits bearbeitete
+Kontakte bekommen keine zweite Double-Opt-in-Mail. Das funktioniert
+absichtlich ohne lokale Merkliste, damit es auch auf einem Host ohne
+dauerhaften Speicher zuverlässig läuft (siehe Abschnitt 5, Render Cron
+Job).
+
+## 5. Automatisch laufen lassen (Render Cron Job)
+
+Damit die Pipeline nicht von Hand gestartet werden muss, läuft sie am
+einfachsten als **Render Cron Job**: ein Dienst, der nur zum geplanten
+Zeitpunkt kurz startet, das Skript einmal durchlaufen lässt und sich
+danach wieder beendet. Bewusst **kein** Background Worker (der würde
+dauerhaft laufen und dauerhaft kosten, obwohl das Skript nur ein paar
+Minuten pro Woche braucht) – siehe Begründung auch in `render.yaml`.
+
+**Wichtig für das Verständnis:** Cron Jobs bei Render haben **kein
+dauerhaftes Dateisystem** zwischen zwei Läufen (Render unterstützt dort
+keine Disks). Jeder Lauf startet komplett neu. Deshalb prüft
+`mailchimp_import.py` vor jedem Import direkt bei Mailchimp selbst
+("gibt es diese E-Mail schon in der Audience?"), statt sich auf eine
+lokale Log-Datei zu verlassen – so bleibt "nur neue Leads verarbeiten"
+auch ohne dauerhaften Speicher zuverlässig.
+
+### Schritt 1: Auf GitHub pushen
+
+Lokal ist hier bereits ein Git-Repo mit einem ersten Commit
+vorbereitet (`.env` ist über `.gitignore` ausgeschlossen, es landen
+also keine Zugangsdaten auf GitHub). Fehlt noch: das leere Repo auf
+GitHub anlegen und verknüpfen.
+
+1. Auf [github.com/new](https://github.com/new) ein neues, **leeres**
+   Repository anlegen (kein README/.gitignore auswählen – das gibt's
+   hier schon). Sichtbarkeit: **Private** empfohlen, da im Code die
+   Provisions-/Rabattlogik und interne Geschäftsdetails stehen.
+2. Danach lokal:
+   ```bash
+   git remote add origin https://github.com/<dein-name>/<repo-name>.git
+   git push -u origin main
+   ```
+
+### Schritt 2: Render Blueprint verbinden
+
+1. [dashboard.render.com](https://dashboard.render.com) → **New** →
+   **Blueprint** → das eben gepushte GitHub-Repo auswählen (beim
+   ersten Mal muss GitHub einmalig mit Render verknüpft werden).
+2. Render erkennt `render.yaml` automatisch und zeigt den Dienst
+   `solemar-partner-leads` (Typ: Cron Job) zur Bestätigung an.
+3. Render fragt dabei nach den drei Umgebungsvariablen
+   `MAILCHIMP_API_KEY`, `MAILCHIMP_SERVER_PREFIX`,
+   `MAILCHIMP_AUDIENCE_ID` – hier die echten Werte eintragen. Diese
+   Werte werden nur bei Render gespeichert, nicht im Repo.
+4. **Apply/Create** klicken – fertig. Der Cron Job läuft ab jetzt
+   automatisch jeden Montag 06:00 UTC (Zeitplan in `render.yaml` unter
+   `schedule` änderbar, Cron-Syntax, danach neu pushen).
+
+Kosten: Render-Cron-Jobs sind kein Gratis-Feature, es fällt eine kleine
+monatliche Mindestgebühr an (aktuelle Preise auf
+[render.com/pricing](https://render.com/pricing) prüfen).
+
+**Vorher nicht vergessen:** die Merge-Felder `FIRMA` und `ORT` müssen
+in der Mailchimp-Audience existieren (siehe Abschnitt 3), sonst gehen
+Firmenname/Stadt beim automatischen Import verloren.
 
 ## Was hier NICHT enthalten ist (bewusst außerhalb des Scopes)
 
@@ -214,4 +270,6 @@ email_template/
   partner_einladung.html           Mailchimp-Kampagnen-Vorlage im SOLÉMAR-Design
 data/                               Wird von den Skripten befüllt (CSV-Ausgaben)
 .env.example                        Vorlage für Zugangsdaten
+render.yaml                         Render-Blueprint (Cron Job, siehe Abschnitt 5)
+.python-version                     Pinnt die Python-Version für Render
 ```
