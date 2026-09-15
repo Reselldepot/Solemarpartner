@@ -137,10 +137,12 @@ Outlook, Gmail, Apple Mail etc.
    passt beides zusammen.)
 4. Absenderadresse & Postanschrift in den Mailchimp-Audience-Settings
    hinterlegen (füllt automatisch `*|LIST:ADDRESS|*` im Footer).
-5. Den Platzhalter-Link im Button
-   (`https://solemarperfume.com/pages/partnerprogramm`) durch die
-   echte URL der Partnerprogramm-Anmeldeseite ersetzen, sobald die
-   Seite existiert (siehe nächster Abschnitt).
+5. Der Button-Link führt aktuell direkt auf Instagram
+   (`https://ig.me/m/solemarperfume` – Metas offizieller "Nachricht
+   senden"-Link, öffnet auf dem Handy sofort den DM-Chat mit
+   @solemarperfume). Sobald es eine eigene Partnerprogramm-Seite gibt,
+   den Link in `email_template/partner_einladung.html` entsprechend
+   austauschen.
 
 ## 4. Import in Mailchimp (nur für bestätigte Kontakte!)
 
