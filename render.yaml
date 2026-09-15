@@ -1,0 +1,40 @@
+# Render Blueprint: definiert den Lead-Scraper als Cron Job.
+#
+# Warum Cron Job und kein Background Worker?
+# Ein Background Worker läuft dauerhaft (wird durchgehend abgerechnet)
+# und bräuchte eine eigene Schleife/Zeitsteuerung im Code. Ein Cron Job
+# startet nur zum geplanten Zeitpunkt, führt startCommand einmal aus und
+# beendet sich danach wieder - genau das braucht dieses Skript (einmal
+# scrapen, anreichern, filtern, nach Mailchimp schreiben, fertig).
+# Cron Jobs haben KEIN dauerhaftes Dateisystem zwischen zwei Läufen
+# (kein Disk-Support), deshalb prüft mailchimp_import.py den
+# "schon vorhanden?"-Status direkt bei Mailchimp statt in einer lokalen
+# Datei - das Skript braucht also keinen persistenten Speicher.
+#
+# Setup:
+#   1. Dieses Repo auf GitHub pushen.
+#   2. Render Dashboard -> New -> Blueprint -> Repo auswählen.
+#   3. Bei der Einrichtung nach MAILCHIMP_API_KEY / MAILCHIMP_SERVER_PREFIX
+#      / MAILCHIMP_AUDIENCE_ID fragt Render automatisch (siehe envVars
+#      unten, sync: false = Wert wird NICHT im Repo gespeichert).
+#   4. Zeitplan bei Bedarf unten unter "schedule" anpassen (Cron-Syntax,
+#      Uhrzeiten in UTC).
+#
+# Kosten: Render Cron Jobs sind kein Gratis-Feature, es fällt eine
+# minimale monatliche Gebühr an (Stand der Render-Doku: ab 1 $/Monat je
+# Cron-Job-Service, abhängig vom gewählten Compute-Plan).
+
+services:
+  - type: cron
+    name: solemar-partner-leads
+    runtime: python
+    schedule: "0 6 * * 1"  # jeden Montag 06:00 UTC = 07:00/08:00 MEZ/MESZ
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python scraper/run_pipeline.py --push-mailchimp --live --status pending"
+    envVars:
+      - key: MAILCHIMP_API_KEY
+        sync: false
+      - key: MAILCHIMP_SERVER_PREFIX
+        sync: false
+      - key: MAILCHIMP_AUDIENCE_ID
+        sync: false

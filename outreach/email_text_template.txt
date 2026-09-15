@@ -1,0 +1,38 @@
+Betreff: Kostenlose Duft-Testerecke für {{name}} – kleines Zubrot ohne Aufwand
+
+Hallo liebes Team von {{name}},
+
+mein Name ist {{absender_name}} von SOLÉMAR – wir entwickeln hochwertige
+Parfums (Sahara Musk, Desert Moon, Coconut Island) und suchen in
+{{ort}} und Umgebung ein paar Läden, die zu unserer Marke passen.
+
+Kurz und ehrlich, worum es geht:
+
+Wir richten bei Ihnen kostenlos eine kleine Testerecke ein – alle drei
+unserer Düfte zum Probieren, Teststreifen inklusive, dazu einen kleinen
+Tischaufsteller mit QR-Code und Rabattcode. Der QR-Code führt direkt auf
+unsere Seite, der Rabatt ist dort schon automatisch aktiviert.
+
+Für jeden Verkauf, der über Ihren Code zustande kommt, bekommen Sie 10 %
+Provision – einfach so, ganz ohne dass Sie aktiv verkaufen müssen. Die
+Kundschaft testet bei Ihnen, kauft online, Sie verdienen mit.
+
+Alles Weitere läuft über ein eigenes Partnerportal: Dort sehen Sie live
+alle Verkäufe und Provisionen, die über Ihren Code laufen, und können
+sich Ihr Guthaben selbstständig per PayPal oder auf Ihr Bankkonto
+auszahlen lassen.
+
+Und falls die Fläschchen mal leer sind: Wir kommen vorbei, füllen auf,
+bringen neue Teststreifen mit. Sollte es bei Ihnen doch nicht passen,
+holen wir alles wieder ab – ohne Fragen, ohne Kosten, ohne Vertrag.
+
+0 € Kosten, 0 Verpflichtung, 0 Verkaufsdruck.
+
+Hätten Sie Lust, das mal auszuprobieren? Ein kurzes „Ja, gerne“ reicht,
+dann melde ich mich für einen Termin bei Ihnen vor Ort.
+
+Herzliche Grüße
+{{absender_name}}
+SOLÉMAR
+{{absender_email}}
+solemarperfume.com
