@@ -11,9 +11,32 @@ Die Overpass-API liefert nicht jeden kleinen Salon (OSM-Abdeckung ist in
 Kleinstädten lückenhaft) -> das Ergebnis ist eine gute Grundliste, aber
 kein Anspruch auf Vollständigkeit. Ergänzung von Hand (z. B. via lokalem
 Branchenverzeichnis) sinnvoll.
+
+Warum eine Abfrage PRO Branche statt einer großen Sammelabfrage?
+Die öffentlichen Overpass-Spiegelserver setzen (v.a. bei Anfragen von
+Cloud-/Hosting-IPs wie Render) ihre eigenen, oft knappen Zeitlimits am
+Reverse-Proxy davor durch - das äußert sich als "504 Gateway Timeout",
+unabhängig vom [timeout:...] in der Abfrage selbst. Kleinere,
+schnellere Einzelabfragen pro Branche laufen seltener dagegen. Schlägt
+eine Branche trotz mehrerer Server und Versuche fehl, macht das Skript
+mit den übrigen Branchen weiter, statt den ganzen Lauf abzubrechen -
+ein Teilergebnis ist besser als gar keins, gerade bei einem
+automatisierten wöchentlichen Lauf.
+
+Ehrlicher Hinweis zu den Grenzen: Getestet direkt gegen die Server
+(2026-09-16) hat overpass.kumi.systems eine einzelne, kleine Abfrage
+zuverlässig beantwortet - aber erst nach ca. 170 Sekunden, deutlich
+über dem alten Timeout von 60s (daher der jetzige höhere Wert unten).
+Das sind kostenlose, öffentlich geteilte Server ohne SLA - gelegentliche
+Ausfälle/Langsamkeit lassen sich mit noch so viel Retry-Logik nicht
+komplett wegbekommen, nur abfedern. Ein anderer getesteter Spiegel
+antwortete zwar sofort, aber mit leeren/veralteten Daten - deshalb
+bewusst NICHT in OVERPASS_URLS aufgenommen, ein "schneller Erfolg" mit
+0 Treffern wäre schlimmer als ein sichtbarer Fehler.
 """
 import csv
 import math
+import os
 import sys
 import time
 
@@ -30,6 +53,11 @@ OVERPASS_URLS = [
     "https://overpass.openstreetmap.ru/api/interpreter",
 ]
 
+RETRIES_PER_MIRROR = 1  # bewusst kein Retry auf demselben (evtl. überlasteten)
+                        # Server, lieber schneller zum nächsten Spiegel
+RETRY_BACKOFF_S = 10
+REQUEST_TIMEOUT_S = 200  # kumi.systems hat im Test bis zu ~170s gebraucht
+
 
 def haversine_km(lat1, lon1, lat2, lon2):
     r = 6371.0
@@ -40,24 +68,48 @@ def haversine_km(lat1, lon1, lat2, lon2):
     return 2 * r * math.asin(math.sqrt(a))
 
 
-def build_query():
+def build_query_for_category(tag_pairs):
     clauses = []
-    for label, tag_pairs in config.OSM_CATEGORIES.items():
-        for key, value in tag_pairs:
-            for kind in ("node", "way", "relation"):
-                clauses.append(
-                    f'{kind}["{key}"="{value}"](around:{config.RADIUS_M},'
-                    f"{config.ORIGIN_LAT},{config.ORIGIN_LON});"
-                )
+    for key, value in tag_pairs:
+        for kind in ("node", "way", "relation"):
+            clauses.append(
+                f'{kind}["{key}"="{value}"](around:{config.RADIUS_M},'
+                f"{config.ORIGIN_LAT},{config.ORIGIN_LON});"
+            )
     body = "\n  ".join(clauses)
     return f"""
-[out:json][timeout:90];
+[out:json][timeout:50];
 (
   {body}
 )
 ;
 out center tags;
 """
+
+
+def fetch_elements(query, label):
+    """Versucht die Abfrage über jeden Spiegelserver, mit ein paar
+    Wiederholungen pro Server (kurzer Backoff bei 504/Timeout). Gibt bei
+    Erfolg die Elemente-Liste zurück, sonst None (Aufrufer entscheidet,
+    ob er mit anderen Branchen weitermacht)."""
+    for url in OVERPASS_URLS:
+        for attempt in range(1, RETRIES_PER_MIRROR + 1):
+            try:
+                print(f"  [{label}] versuche {url} (Versuch {attempt}/{RETRIES_PER_MIRROR}) ...")
+                resp = requests.post(
+                    url,
+                    data={"data": query},
+                    headers={"User-Agent": config.USER_AGENT},
+                    timeout=REQUEST_TIMEOUT_S,
+                )
+                resp.raise_for_status()
+                return resp.json().get("elements", [])
+            except requests.RequestException as exc:
+                print(f"    fehlgeschlagen ({exc})")
+                if attempt < RETRIES_PER_MIRROR:
+                    time.sleep(RETRY_BACKOFF_S)
+        # nächster Spiegelserver
+    return None
 
 
 def category_for_tags(tags):
@@ -115,39 +167,36 @@ def extract_row(element):
 
 def main():
     print(f"Frage Overpass-API ab (Radius {config.RADIUS_M/1000:.0f} km um "
-          f"Freudenstadt)...")
-    query = build_query()
+          f"Freudenstadt), pro Branche einzeln...")
 
-    resp = None
-    last_error = None
-    for url in OVERPASS_URLS:
-        try:
-            print(f"  versuche {url} ...")
-            resp = requests.post(
-                url,
-                data={"data": query},
-                headers={"User-Agent": config.USER_AGENT},
-                timeout=100,
-            )
-            resp.raise_for_status()
-            break
-        except requests.RequestException as exc:
-            last_error = exc
-            print(f"    fehlgeschlagen ({exc}), versuche nächsten Spiegelserver...")
-            resp = None
+    all_elements = []
+    failed_categories = []
+    for label, tag_pairs in config.OSM_CATEGORIES.items():
+        query = build_query_for_category(tag_pairs)
+        elements = fetch_elements(query, label)
+        if elements is None:
+            print(f"  [{label}] alle Spiegelserver/Versuche fehlgeschlagen - "
+                  f"übersprungen, weiter mit nächster Branche.")
+            failed_categories.append(label)
             continue
+        print(f"  [{label}] {len(elements)} Roh-Treffer erhalten.")
+        all_elements.extend(elements)
 
-    if resp is None:
+    if failed_categories and not all_elements:
         raise RuntimeError(
-            f"Alle Overpass-Spiegelserver fehlgeschlagen. Letzter Fehler: {last_error}"
+            f"Alle Branchen fehlgeschlagen ({', '.join(failed_categories)}). "
+            f"Overpass-Server sind aktuell nicht erreichbar - später erneut versuchen."
         )
+    if failed_categories:
+        print(f"\nACHTUNG: Diese Branchen konnten diesmal nicht abgefragt werden: "
+              f"{', '.join(failed_categories)}. Ergebnis ist unvollständig, aber "
+              f"nicht leer - beim nächsten planmäßigen Lauf erneut versucht.")
 
-    elements = resp.json().get("elements", [])
-    print(f"{len(elements)} Roh-Treffer von OSM erhalten.")
+    print(f"\n{len(all_elements)} Roh-Treffer insgesamt von OSM erhalten.")
 
     rows = []
     seen = set()
-    for el in elements:
+    for el in all_elements:
         row = extract_row(el)
         if not row:
             continue
@@ -159,7 +208,6 @@ def main():
 
     rows.sort(key=lambda r: (r["category"], r["distance_km"]))
 
-    import os
     os.makedirs(config.DATA_DIR, exist_ok=True)
     fieldnames = list(rows[0].keys()) if rows else [
         "osm_type", "osm_id", "category", "name", "street_address",
