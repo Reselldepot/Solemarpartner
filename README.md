@@ -66,7 +66,7 @@ Das macht drei Dinge nacheinander (auch einzeln aufrufbar):
 |---|---|---|
 | Betriebe finden (OpenStreetMap, 30 km um Freudenstadt) | `scraper/find_businesses.py` | `data/1_raw_leads.csv` |
 | Fehlende E-Mails aus Impressum/Kontakt-Seite ergänzen | `scraper/enrich_emails.py` | `data/2_enriched_leads.csv` |
-| Bekannte Ketten raussortieren | `scraper/filter_chains.py` | `data/3_leads_ready.csv` + `3_needs_review.csv` + `3_excluded_chains.csv` |
+| Bekannte Ketten raussortieren | `scraper/filter_chains.py` | `data/3_leads_ready.csv` + `3_excluded_chains.csv` |
 
 **Warum OpenStreetMap statt Google Maps/Gelbe Seiten scrapen?** Freie,
 offen lizenzierte Daten – kein Verstoß gegen fremde Nutzungsbedingungen.
@@ -79,13 +79,13 @@ Impressum-Adresse nach.
 
 **Ketten-Filter ist unvollständig.** Die Blockliste in `config.py`
 (`CHAIN_BLOCKLIST`) enthält bekannte Marken, ist aber keine
-vollständige Datenbank. Zusätzlich werden Namen, die mehrfach im
-Datensatz auftauchen (= möglicherweise mehrere Filialen), automatisch
-nach `needs_review.csv` verschoben statt gelöscht.
-
-➜ **Vor dem nächsten Schritt `data/3_needs_review.csv` kurz von Hand
-durchsehen** und ggf. einzelne Zeilen manuell in `3_leads_ready.csv`
-verschieben oder ergänzen.
+vollständige Datenbank. Es gibt bewusst **keinen manuellen
+Zwischenschritt mehr** - alles, was nicht auf der Blockliste steht,
+landet direkt in `data/3_leads_ready.csv` und wird beim nächsten
+Mailchimp-Push mitgenommen (auch Namen, die mehrfach im Datensatz
+auftauchen, z. B. weil ein Betrieb zwei OSM-Einträge hat). Wer die
+automatische Erkennung schärfer haben möchte, ergänzt einfach weitere
+Markennamen in `CHAIN_BLOCKLIST`.
 
 ## 2. Persönliche Erstansprache verschicken
 

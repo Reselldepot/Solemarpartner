@@ -21,8 +21,9 @@ OSM_CATEGORIES = {
 
 # --- Filter: bekannte Ketten -------------------------------------------
 # Namensfragmente (klein geschrieben), die auf eine Franchise-/Ketten-
-# marke hindeuten. Liste ist NICHT vollständig -> needs_review.csv immer
-# manuell gegenprüfen, bevor importiert/angeschrieben wird.
+# marke hindeuten. Liste ist NICHT vollständig - alles, was hier nicht
+# auftaucht, gilt automatisch als Einzelladen und geht direkt durch
+# (bewusst kein manueller Prüfschritt mehr). Bei Bedarf hier ergänzen.
 CHAIN_BLOCKLIST = [
     "klier",
     "boyens",
@@ -64,6 +65,5 @@ DATA_DIR = "data"
 RAW_LEADS_CSV = f"{DATA_DIR}/1_raw_leads.csv"
 ENRICHED_CSV = f"{DATA_DIR}/2_enriched_leads.csv"
 READY_CSV = f"{DATA_DIR}/3_leads_ready.csv"
-NEEDS_REVIEW_CSV = f"{DATA_DIR}/3_needs_review.csv"
 EXCLUDED_CHAINS_CSV = f"{DATA_DIR}/3_excluded_chains.csv"
 SENT_LOG_CSV = f"{DATA_DIR}/sent_log.csv"

@@ -2,7 +2,7 @@
 Führt die Scraper-Schritte nacheinander aus:
   1. find_businesses.py   -> data/1_raw_leads.csv
   2. enrich_emails.py     -> data/2_enriched_leads.csv
-  3. filter_chains.py     -> data/3_leads_ready.csv (+ review/excluded)
+  3. filter_chains.py     -> data/3_leads_ready.csv (+ excluded_chains.csv)
   4. (optional) mailchimp_import.py -> neue Kontakte nach Mailchimp
 
 Standardmäßig macht Schritt 4 GAR NICHTS - erst mit --push-mailchimp
@@ -70,8 +70,8 @@ def main():
     print()
     filter_chains.main()
 
-    print("\nPipeline (Leads) fertig. Bitte data/3_needs_review.csv kurz von Hand")
-    print("prüfen, bevor data/3_leads_ready.csv importiert oder angeschrieben wird.")
+    print("\nPipeline (Leads) fertig. Alles außer bekannten Ketten liegt jetzt in")
+    print("data/3_leads_ready.csv (kein manueller Zwischenschritt mehr).")
 
     if not args.push_mailchimp:
         print("\nHinweis: --push-mailchimp nicht gesetzt, es wurde NICHTS an "

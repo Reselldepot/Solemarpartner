@@ -59,10 +59,53 @@ CATEGORY_TAGS = {
 
 def mailchimp_request(method, path, server, api_key, **kwargs):
     url = f"https://{server}.api.mailchimp.com/3.0{path}"
-    resp = requests.request(
-        method, url, auth=("anystring", api_key), timeout=15, **kwargs
+    try:
+        return requests.request(
+            method, url, auth=("anystring", api_key), timeout=15, **kwargs
+        )
+    except requests.exceptions.RequestException as exc:
+        # Am häufigsten die Ursache: MAILCHIMP_SERVER_PREFIX passt nicht
+        # zum API-Key (z.B. Key endet auf "-us21", Prefix ist aber "us6")
+        # -> falsche Subdomain -> DNS-/Verbindungsfehler statt HTTP-Fehler.
+        sys.exit(
+            f"Netzwerkfehler beim Aufruf von {url}: {exc}\n"
+            f"Häufigste Ursache: MAILCHIMP_SERVER_PREFIX passt nicht zum "
+            f"API-Key. Der Server-Prefix ist genau der Teil NACH dem "
+            f"letzten Bindestrich im API-Key (z.B. Key endet auf "
+            f"'...-us21' -> Prefix ist 'us21')."
+        )
+
+
+def verify_credentials(server, api_key, audience_id):
+    """Prüft VOR dem eigentlichen Import in einem einzigen Request, ob
+    API-Key, Server-Prefix und Audience-ID zusammenpassen. Ohne diese
+    Prüfung sieht man bei falschen Zugangsdaten nur "18 versucht, 0
+    angekommen" ohne zu wissen warum - das hier gibt eine klare Antwort,
+    bevor überhaupt ein Kontakt verarbeitet wird."""
+    resp = mailchimp_request(
+        "GET", f"/lists/{audience_id}?fields=id,name,stats.member_count",
+        server, api_key,
     )
-    return resp
+    if resp.status_code == 200:
+        info = resp.json()
+        print(f"Mailchimp-Verbindung OK -> Audience \"{info.get('name')}\" "
+              f"({info.get('stats', {}).get('member_count', '?')} bestehende Mitglieder)\n")
+        return
+    if resp.status_code == 401:
+        sys.exit(
+            "Fehler: Mailchimp lehnt den API-Key ab (401 Unauthorized).\n"
+            "Prüfen: MAILCHIMP_API_KEY korrekt kopiert (keine Leerzeichen/"
+            "Zeilenumbruch)? Und passt MAILCHIMP_SERVER_PREFIX zum Teil "
+            "nach dem letzten Bindestrich im Key (z.B. '...-us21' -> 'us21')?"
+        )
+    if resp.status_code == 404:
+        sys.exit(
+            f"Fehler: Audience/Liste mit ID '{audience_id}' wurde nicht "
+            f"gefunden (404). MAILCHIMP_AUDIENCE_ID prüfen: Mailchimp -> "
+            f"Audience -> Settings -> Audience name and defaults -> "
+            f"'Audience ID'."
+        )
+    sys.exit(f"Fehler beim Verbindungstest: HTTP {resp.status_code} - {resp.text[:300]}")
 
 
 def already_in_mailchimp(server, api_key, audience_id, subscriber_hash):
@@ -146,6 +189,9 @@ def main(argv=None):
     elif not all([api_key, server, audience_id]):
         sys.exit("Fehler: MAILCHIMP_API_KEY / MAILCHIMP_SERVER_PREFIX / "
                   "MAILCHIMP_AUDIENCE_ID fehlen in .env (siehe .env.example).")
+
+    if args.live:
+        verify_credentials(server, api_key, audience_id)
 
     with open(args.input, encoding="utf-8-sig") as f:
         rows = [r for r in csv.DictReader(f) if r.get("email")]

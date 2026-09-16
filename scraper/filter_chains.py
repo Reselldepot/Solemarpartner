@@ -1,16 +1,23 @@
 """
-Schritt 3: Trennt Einzelläden von (vermuteten) Ketten/Franchises.
+Schritt 3: Trennt Einzelläden von bekannten Ketten/Franchises.
 
-Drei Ausgabe-Dateien:
-  - leads_ready.csv        eindeutig aussehende Einzelläden mit E-Mail
-  - needs_review.csv       Namen, die mehrfach im Datensatz vorkommen
-                            (mögliche Filialkette) ODER ohne E-Mail
+Zwei Ausgabe-Dateien:
+  - leads_ready.csv        alles, was NICHT auf der Ketten-Blockliste
+                            steht - unabhängig davon, ob eine E-Mail
+                            gefunden wurde oder der Name mehrfach im
+                            Datensatz auftaucht. Kein manueller
+                            Zwischenschritt mehr.
   - excluded_chains.csv    Treffer aus der bekannten Ketten-Blockliste
+                            (config.CHAIN_BLOCKLIST)
 
-WICHTIG: Automatische Ketten-Erkennung ist nie perfekt. Bitte
-needs_review.csv vor dem Import/Anschreiben kurz von Hand durchsehen -
-manche Namen (z. B. "Haarstudio") kommen bei unabhängigen Läden einfach
-öfter zufällig vor.
+WICHTIG: Die automatische Ketten-Erkennung basiert ausschließlich auf
+der Namens-Blockliste in config.py. Sie ist nicht vollständig - unbekannte
+Filialketten, die nicht in der Liste stehen, rutschen mit durch. Die
+Blockliste bei Bedarf in config.py ergänzen.
+
+Zeilen ohne E-Mail landen zwar in leads_ready.csv (damit nichts verloren
+geht), werden aber von mailchimp_import.py automatisch übersprungen,
+da Mailchimp ohne E-Mail-Adresse keinen Kontakt anlegen kann.
 """
 import csv
 import re
@@ -41,21 +48,11 @@ def main():
     for row in rows:
         row["normalized_name"] = normalize_name(row["name"])
 
-    name_counts = {}
-    for row in rows:
-        name_counts[row["normalized_name"]] = name_counts.get(row["normalized_name"], 0) + 1
-
-    ready, review, excluded = [], [], []
+    ready, excluded = [], []
     for row in rows:
         if is_known_chain(row["name"]):
             row["exclude_reason"] = "bekannte Kette (Blockliste)"
             excluded.append(row)
-        elif name_counts[row["normalized_name"]] > 1:
-            row["review_reason"] = "Name mehrfach im Datensatz - evtl. Filialkette"
-            review.append(row)
-        elif not row["email"]:
-            row["review_reason"] = "keine E-Mail gefunden - manuell nachschlagen?"
-            review.append(row)
         else:
             ready.append(row)
 
@@ -78,12 +75,15 @@ def main():
             writer.writerows(data)
 
     write(config.READY_CSV, ready)
-    write(config.NEEDS_REVIEW_CSV, review, "review_reason")
     write(config.EXCLUDED_CHAINS_CSV, excluded, "exclude_reason")
 
-    print(f"Einzelläden mit E-Mail, bereit:  {len(ready):4d}  -> {config.READY_CSV}")
-    print(f"Zur manuellen Prüfung:           {len(review):4d}  -> {config.NEEDS_REVIEW_CSV}")
-    print(f"Ausgeschlossene Ketten:          {len(excluded):4d}  -> {config.EXCLUDED_CHAINS_CSV}")
+    with_email = sum(1 for r in ready if r["email"])
+    without_email = len(ready) - with_email
+
+    print(f"Bereit für Mailchimp (nicht auf Ketten-Blockliste): {len(ready):4d}  -> {config.READY_CSV}")
+    print(f"  davon mit E-Mail (werden importiert):             {with_email:4d}")
+    print(f"  davon ohne E-Mail (werden übersprungen):          {without_email:4d}")
+    print(f"Ausgeschlossene Ketten:                              {len(excluded):4d}  -> {config.EXCLUDED_CHAINS_CSV}")
 
 
 if __name__ == "__main__":
