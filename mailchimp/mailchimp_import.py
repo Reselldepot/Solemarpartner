@@ -108,20 +108,31 @@ def verify_credentials(server, api_key, audience_id):
     sys.exit(f"Fehler beim Verbindungstest: HTTP {resp.status_code} - {resp.text[:300]}")
 
 
-def already_in_mailchimp(server, api_key, audience_id, subscriber_hash):
-    """Fragt Mailchimp selbst, ob der Kontakt schon existiert - statt uns
+ACTIVE_STATUSES = ("subscribed", "pending")
+
+
+def existing_status(server, api_key, audience_id, subscriber_hash):
+    """Fragt Mailchimp selbst nach dem Status eines Kontakts - statt uns
     auf eine lokale Log-Datei zu verlassen. Das ist wichtig, sobald die
     Pipeline z.B. als Render Cron Job läuft: dort startet jeder Lauf mit
-    einem frischen, leeren Dateisystem (kein Disk-Support für Cron Jobs),
-    eine lokale Log-Datei würde also bei jedem Lauf verschwinden und
-    ALLE Kontakte erneut anfassen (und bei status=pending erneut eine
-    Double-Opt-in-Mail auslösen). Mailchimp als "Quelle der Wahrheit" zu
-    fragen macht das Skript unabhängig vom Dateisystem."""
+    einem frischen, leeren Dateisystem (kein Disk-Support für Cron Jobs).
+
+    WICHTIG (Bugfix): Mailchimp "löscht" Kontakte über die Oberfläche
+    standardmäßig nicht wirklich, sondern archiviert sie nur. Ein
+    archivierter Kontakt liefert bei GET weiterhin HTTP 200, taucht aber
+    NICHT mehr in der normalen Kontakt-Ansicht im Dashboard auf. Ein
+    reines "existiert der Datensatz überhaupt?" (nur HTTP-Status prüfen)
+    hat solche Kontakte fälschlich als "schon vorhanden" übersprungen,
+    obwohl sie im Dashboard gar nicht sichtbar waren. Deshalb jetzt: den
+    tatsächlichen 'status' auswerten und zurückgeben (oder None, wenn
+    nicht gefunden)."""
     resp = mailchimp_request(
         "GET", f"/lists/{audience_id}/members/{subscriber_hash}?fields=status",
         server, api_key,
     )
-    return resp.status_code == 200
+    if resp.status_code == 200:
+        return resp.json().get("status")
+    return None
 
 
 def upsert_member(server, api_key, audience_id, row, status_if_new, dry_run):
@@ -145,9 +156,13 @@ def upsert_member(server, api_key, audience_id, row, status_if_new, dry_run):
               f"({row.get('name')}, status_if_new={status_if_new}, tag={tag})")
         return "dry-run"
 
-    if already_in_mailchimp(server, api_key, audience_id, subscriber_hash):
-        print(f"  bereits in Mailchimp vorhanden, übersprungen: {email}")
+    status = existing_status(server, api_key, audience_id, subscriber_hash)
+    if status in ACTIVE_STATUSES:
+        print(f"  bereits aktiv in Mailchimp ({status}), übersprungen: {email}")
         return "skipped_existing"
+    if status is not None:
+        print(f"  Datensatz existiert mit Status '{status}' (z.B. archiviert/"
+              f"abgemeldet) - versuche trotzdem anzulegen: {email}")
 
     resp = mailchimp_request(
         "PUT",
