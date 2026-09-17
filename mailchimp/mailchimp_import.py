@@ -176,6 +176,87 @@ def upsert_member(server, api_key, audience_id, row, status_if_new, dry_run):
         return "error"
 
 
+def resubscribe_all_pending(server, api_key, audience_id, dry_run):
+    """Setzt ALLE aktuell 'pending' Kontakte der Audience auf 'subscribed' -
+    nicht nur die aus der aktuellen leads_ready.csv, sondern audienceweit
+    jeden Kontakt, der gerade auf die Double-Opt-in-Bestätigung wartet.
+
+    Das übergeht bewusst Mailchimps Double-Opt-in-Schutz. Wird nur
+    aufgerufen, wenn explizit --status subscribed übergeben wurde - das
+    ist die vom Nutzer angeforderte Bestätigung, das so zu wollen."""
+    print("\n--- Alle 'pending'-Kontakte auf 'subscribed' setzen ---")
+    if dry_run:
+        print("  [DRY-RUN] würde ALLE aktuell 'pending' Kontakte der Audience "
+              "auf 'subscribed' umstellen (kein API-Aufruf im Vorschau-Modus).")
+        return
+
+    count = 200
+    total_seen = 0
+    converted = 0
+    errors = 0
+    first_page = True
+    failed_hashes = set()  # verhindert Endlosschleife, falls PATCH für
+                            # denselben Kontakt wiederholt fehlschlägt (er
+                            # bliebe sonst für immer "pending" und würde bei
+                            # jedem Durchlauf erneut in derselben Seite auftauchen)
+    # Wichtig: IMMER offset=0 abfragen, nicht hochzählen. Jede erfolgreich
+    # umgestellte Person verschwindet aus dem "status=pending"-Filter, die
+    # Ergebnismenge schrumpft also während wir sie durchgehen. Mit
+    # wachsendem Offset würden dadurch Kontakte übersprungen (klassischer
+    # Pagination-während-Mutation-Fehler) - stattdessen immer die vorderste
+    # verbleibende Seite holen, bis keine pending-Kontakte mehr übrig sind.
+    while True:
+        resp = mailchimp_request(
+            "GET",
+            f"/lists/{audience_id}/members"
+            f"?status=pending&count={count}&offset=0"
+            f"&fields=members.id,members.email_address,total_items",
+            server, api_key,
+        )
+        if resp.status_code != 200:
+            print(f"  FEHLER beim Abrufen der pending-Kontakte: "
+                  f"{resp.status_code} {resp.text[:200]}")
+            break
+
+        data = resp.json()
+        members = data.get("members", [])
+        if first_page:
+            print(f"  {data.get('total_items', 0)} Kontakte aktuell mit "
+                  f"Status 'pending' gefunden.")
+            first_page = False
+
+        if not members:
+            break
+
+        # Nur Kontakte bearbeiten, die wir nicht schon erfolglos versucht haben
+        pending_members = [m for m in members if m.get("id") not in failed_hashes]
+        if not pending_members:
+            break  # alle verbleibenden pending-Kontakte sind bereits als "fehlgeschlagen" markiert
+
+        for member in pending_members:
+            email = member.get("email_address", "")
+            subscriber_hash = member.get("id")
+            total_seen += 1
+
+            patch_resp = mailchimp_request(
+                "PATCH",
+                f"/lists/{audience_id}/members/{subscriber_hash}",
+                server, api_key, json={"status": "subscribed"},
+            )
+            if patch_resp.status_code == 200:
+                converted += 1
+                print(f"  -> subscribed: {email}")
+            else:
+                errors += 1
+                failed_hashes.add(subscriber_hash)
+                print(f"  FEHLER bei {email}: {patch_resp.status_code} "
+                      f"{patch_resp.text[:200]}")
+            time.sleep(0.3)
+
+    print(f"  {converted} auf 'subscribed' umgestellt, {errors} Fehler "
+          f"(von {total_seen} geprüften pending-Kontakten).")
+
+
 def main(argv=None):
     """argv=None liest von der Kommandozeile (normaler CLI-Aufruf).
     Wird auch von scraper/run_pipeline.py mit einer expliziten Liste
@@ -192,7 +273,10 @@ def main(argv=None):
         print("*** ACHTUNG: --status subscribed übergeht Mailchimps Double-Opt-in.")
         print("*** Das ist nur zulässig, wenn für JEDEN Kontakt in der Liste bereits")
         print("*** eine nachweisbare Einwilligung vorliegt. Für die rohe Scraper-")
-        print("*** Liste ist das NICHT der Fall. Abbruch in 5 Sekunden, Ctrl+C zum Stoppen.")
+        print("*** Liste ist das NICHT der Fall.")
+        print("*** ZUSÄTZLICH werden dabei ALLE aktuell 'pending' Kontakte der")
+        print("*** gesamten Audience auf 'subscribed' umgestellt, nicht nur die")
+        print("*** aus diesem Lauf. Abbruch in 5 Sekunden, Ctrl+C zum Stoppen.")
         time.sleep(5)
 
     api_key = os.getenv("MAILCHIMP_API_KEY")
@@ -223,6 +307,9 @@ def main(argv=None):
             time.sleep(0.3)  # Mailchimp-Rate-Limits schonen (2 Requests/Kontakt: GET+PUT)
 
     print(f"\nZusammenfassung: {results}")
+
+    if args.status == "subscribed":
+        resubscribe_all_pending(server, api_key, audience_id, dry_run=not args.live)
 
 
 if __name__ == "__main__":
