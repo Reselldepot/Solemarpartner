@@ -155,8 +155,16 @@ python mailchimp/mailchimp_import.py --live
 ```
 
 Siehe ausführlichen Warnhinweis im Skript-Kopf. `--status subscribed`
-ist absichtlich nur mit zusätzlicher Bestätigung nutzbar und sollte nur
-für Kontakte verwendet werden, die nachweislich zugestimmt haben.
+ist absichtlich nur mit zusätzlicher Bestätigung nutzbar.
+
+**Update, auf ausdrücklichen Wunsch:** `--status subscribed` legt nicht
+nur neue Kontakte direkt als "subscribed" an, sondern stellt bei jedem
+Lauf zusätzlich **alle** aktuell "pending" Kontakte der gesamten
+Audience automatisch auf "subscribed" um (nicht nur die aus dem
+aktuellen CSV). Das übergeht bewusst Mailchimps Double-Opt-in-Schutz
+für die komplette Liste. `render.yaml` nutzt standardmäßig
+`--status subscribed`, der wöchentliche Render-Lauf macht das also
+automatisch mit.
 
 **Läuft das automatisch mit durch, wenn ich die Pipeline starte?**
 Nicht ohne dass du es explizit anforderst. `run_pipeline.py` macht den
@@ -168,9 +176,11 @@ und erst zusätzlich mit `--live` wird wirklich geschrieben:
 python scraper/run_pipeline.py --push-mailchimp --live
 ```
 
-Dabei bleibt der Status weiterhin standardmäßig `pending`
-(Double-Opt-in) - das Skript umgeht also weiterhin nicht die
-Einwilligung, nur weil es jetzt in einem Befehl läuft.
+Der CLI-Default bleibt `pending` (Double-Opt-in), solange kein
+`--status` angegeben wird - das Skript umgeht die Einwilligung also
+nicht automatisch, nur weil es jetzt in einem Befehl läuft.
+`render.yaml` übergibt für den automatischen Render-Lauf allerdings
+explizit `--status subscribed` (siehe oben).
 
 **"Nur neue Leads" bei wiederholten Läufen:** `mailchimp_import.py`
 fragt vor jedem Import direkt bei Mailchimp nach, ob die E-Mail dort

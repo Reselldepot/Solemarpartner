@@ -23,6 +23,12 @@
 # Kosten: Render Cron Jobs sind kein Gratis-Feature, es fällt eine
 # minimale monatliche Gebühr an (Stand der Render-Doku: ab 1 $/Monat je
 # Cron-Job-Service, abhängig vom gewählten Compute-Plan).
+#
+# --status subscribed (statt pending): Legt neue Kontakte direkt als
+# "subscribed" an UND stellt bei jedem Lauf zusätzlich alle bestehenden
+# "pending"-Kontakte der Audience auf "subscribed" um. Das übergeht
+# bewusst Mailchimps Double-Opt-in - auf ausdrücklichen Wunsch so
+# eingestellt, siehe Warnhinweis in mailchimp/mailchimp_import.py.
 
 services:
   - type: cron
@@ -30,7 +36,7 @@ services:
     runtime: python
     schedule: "0 6 * * 1"  # jeden Montag 06:00 UTC = 07:00/08:00 MEZ/MESZ
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "python scraper/run_pipeline.py --push-mailchimp --live --status pending"
+    startCommand: "python scraper/run_pipeline.py --push-mailchimp --live --status subscribed"
     envVars:
       - key: MAILCHIMP_API_KEY
         sync: false
